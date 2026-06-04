@@ -1,14 +1,18 @@
-CC ?= cc
-CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2
-TARGET := ids_sniffer
-SRC := src/ids_sniffer.c
+CC = gcc
+CFLAGS ?= -std=c11 -Wall -Wextra -g -D_DEFAULT_SOURCE -Iinclude
+TARGET := giftids
+SRCS := src/main.c src/capture.c src/parser.c src/logger.c src/detector.c
+OBJS := $(SRCS:.c=.o)
 
 .PHONY: all clean
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $@ $<
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(OBJS)
