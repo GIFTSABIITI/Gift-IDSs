@@ -9,13 +9,41 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 static volatile sig_atomic_t keep_running = 1;
+static CaptureIdleHandler idle_handler = NULL;
+static void *idle_user_data = NULL;
 
 void capture_stop(void)
 {
     keep_running = 0;
+}
+
+void capture_set_idle_handler(CaptureIdleHandler handler, void *user_data)
+{
+    idle_handler = handler;
+    idle_user_data = user_data;
+}
+
+static void run_idle_handler(void)
+{
+    if (idle_handler != NULL) {
+        idle_handler(idle_user_data);
+    }
+}
+
+static void set_receive_timeout(int sockfd)
+{
+    struct timeval timeout;
+
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+
+    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
+        fprintf(stderr, "Warning: could not set socket receive timeout: %s\n", strerror(errno));
+    }
 }
 
 static int bind_to_interface(int sockfd, const char *interface)
@@ -70,6 +98,7 @@ int capture_packets(const char *interface, long max_packets, PacketHandler handl
         fprintf(stderr, "Hint: run with sudo or grant CAP_NET_RAW to this binary.\n");
         return -1;
     }
+    set_receive_timeout(sockfd);
 
     if (interface != NULL && bind_to_interface(sockfd, interface) < 0) {
         close(sockfd);
@@ -87,6 +116,11 @@ int capture_packets(const char *interface, long max_packets, PacketHandler handl
         bytes_read = recvfrom(sockfd, buffer, sizeof(buffer), 0, NULL, NULL);
         if (bytes_read < 0) {
             if (errno == EINTR) {
+                continue;
+            }
+
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                run_idle_handler();
                 continue;
             }
 

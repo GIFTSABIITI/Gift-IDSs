@@ -3,6 +3,7 @@
 
 #include <arpa/inet.h>
 #include <stdint.h>
+#include <time.h>
 
 typedef struct {
     char src_ip[INET_ADDRSTRLEN];
@@ -27,6 +28,7 @@ typedef struct {
     uint8_t icmp_type;
     uint8_t icmp_code;
 
+    time_t timestamp;
     int valid;
 } PacketInfo;
 

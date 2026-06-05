@@ -8,14 +8,22 @@
 
 static FILE *log_file = NULL;
 static FILE *alert_log_file = NULL;
+static int packet_logging_enabled = 1;
+static int alert_logging_enabled = 1;
 
-static void make_timestamp(char *buffer, size_t buffer_size)
+static void make_timestamp(time_t timestamp, char *buffer, size_t buffer_size)
 {
-    time_t now;
     struct tm local_time;
 
-    now = time(NULL);
-    localtime_r(&now, &local_time);
+    if (timestamp == 0) {
+        timestamp = time(NULL);
+    }
+
+    if (localtime_r(&timestamp, &local_time) == NULL) {
+        snprintf(buffer, buffer_size, "unknown-time");
+        return;
+    }
+
     strftime(buffer, buffer_size, "%Y-%m-%d %H:%M:%S", &local_time);
 }
 
@@ -67,32 +75,47 @@ static void make_tcp_flags(const PacketInfo *info, char *buffer, size_t buffer_s
     }
 }
 
-static void make_packet_summary(const PacketInfo *info, char *buffer, size_t buffer_size)
+static void make_packet_summary(const PacketInfo *info, char *buffer, size_t buffer_size, int detailed)
 {
     int written;
 
-    written = snprintf(buffer, buffer_size,
-                       "frame_len=%u IPv4 %s -> %s proto=%s ttl=%u ip_len=%u",
-                       info->frame_len,
-                       info->src_ip,
-                       info->dst_ip,
-                       info->protocol,
-                       info->ttl,
-                       info->ip_len);
+    if (detailed) {
+        written = snprintf(buffer, buffer_size,
+                           "frame_len=%u IPv4 %s -> %s proto=%s ttl=%u ip_len=%u",
+                           info->frame_len,
+                           info->src_ip,
+                           info->dst_ip,
+                           info->protocol,
+                           info->ttl,
+                           info->ip_len);
+    } else {
+        written = snprintf(buffer, buffer_size,
+                           "IPv4 %s -> %s proto=%s",
+                           info->src_ip,
+                           info->dst_ip,
+                           info->protocol);
+    }
 
     if (written < 0 || (size_t)written >= buffer_size) {
         return;
     }
 
     if (strcmp(info->protocol, "TCP") == 0) {
-        char flags[64];
+        if (detailed) {
+            char flags[64];
 
-        make_tcp_flags(info, flags, sizeof(flags));
-        snprintf(buffer + written, buffer_size - (size_t)written,
-                 " sport=%u dport=%u flags=%s",
-                 info->src_port,
-                 info->dst_port,
-                 flags);
+            make_tcp_flags(info, flags, sizeof(flags));
+            snprintf(buffer + written, buffer_size - (size_t)written,
+                     " sport=%u dport=%u flags=%s",
+                     info->src_port,
+                     info->dst_port,
+                     flags);
+        } else {
+            snprintf(buffer + written, buffer_size - (size_t)written,
+                     " sport=%u dport=%u",
+                     info->src_port,
+                     info->dst_port);
+        }
     } else if (strcmp(info->protocol, "UDP") == 0) {
         snprintf(buffer + written, buffer_size - (size_t)written,
                  " sport=%u dport=%u",
@@ -106,41 +129,113 @@ static void make_packet_summary(const PacketInfo *info, char *buffer, size_t buf
     }
 }
 
-static int ensure_log_directory(void)
+static int ensure_parent_directory(const char *path)
 {
-    if (mkdir("logs", 0755) == 0 || errno == EEXIST) {
+    char directory[256];
+    const char *slash;
+    size_t directory_len;
+
+    if (path == NULL) {
+        return -1;
+    }
+
+    slash = strrchr(path, '/');
+    if (slash == NULL || slash == path) {
         return 0;
     }
 
-    perror("mkdir logs");
+    directory_len = (size_t)(slash - path);
+    if (directory_len >= sizeof(directory)) {
+        fprintf(stderr, "Warning: log directory path is too long for '%s'\n", path);
+        return -1;
+    }
+
+    memcpy(directory, path, directory_len);
+    directory[directory_len] = '\0';
+
+    if (mkdir(directory, 0755) == 0 || errno == EEXIST) {
+        return 0;
+    }
+
+    fprintf(stderr, "Warning: could not create log directory '%s': %s\n", directory, strerror(errno));
     return -1;
 }
 
-int logger_open(const char *path)
+static int open_log_target(const char *path, FILE **target, const char *label)
 {
-    if (ensure_log_directory() != 0) {
+    if (path == NULL || *path == '\0') {
+        fprintf(stderr, "Warning: %s log path is empty; file logging disabled for this log\n", label);
         return -1;
     }
 
-    log_file = fopen(path, "a");
-    if (log_file == NULL) {
-        perror(path);
+    if (ensure_parent_directory(path) != 0) {
+        fprintf(stderr, "Warning: %s log file '%s' was not opened\n", label, path);
         return -1;
     }
 
-    alert_log_file = fopen(GIFTIDS_ALERT_LOG_FILE, "a");
-    if (alert_log_file == NULL) {
-        perror(GIFTIDS_ALERT_LOG_FILE);
-        fclose(log_file);
-        log_file = NULL;
+    *target = fopen(path, "a");
+    if (*target == NULL) {
+        fprintf(stderr, "Warning: could not open %s log file '%s': %s\n", label, path, strerror(errno));
         return -1;
     }
 
     return 0;
 }
 
+int logger_init(const GiftIDSConfig *config)
+{
+    GiftIDSConfig defaults;
+    const GiftIDSConfig *active_config = config;
+    int status = 0;
+
+    if (active_config == NULL) {
+        config_set_defaults(&defaults);
+        active_config = &defaults;
+    }
+
+    logger_close();
+
+    if (packet_logging_enabled &&
+        open_log_target(active_config->packet_log_file, &log_file, "packet") != 0) {
+        status = -1;
+    }
+
+    if (alert_logging_enabled &&
+        open_log_target(active_config->alert_log_file, &alert_log_file, "alert") != 0) {
+        status = -1;
+    }
+
+    return status;
+}
+
+int logger_open(const char *path)
+{
+    GiftIDSConfig config;
+
+    config_set_defaults(&config);
+    if (path != NULL && *path != '\0') {
+        snprintf(config.packet_log_file, sizeof(config.packet_log_file), "%s", path);
+    }
+
+    return logger_init(&config);
+}
+
+void logger_set_packet_logging_enabled(int enabled)
+{
+    packet_logging_enabled = enabled ? 1 : 0;
+}
+
+void logger_set_alert_logging_enabled(int enabled)
+{
+    alert_logging_enabled = enabled ? 1 : 0;
+}
+
 void logger_close(void)
 {
+    /*
+     * Graceful shutdown matters for an IDS because Ctrl+C should not leave
+     * buffered log entries hidden in memory. fclose() flushes before closing.
+     */
     if (log_file != NULL) {
         fclose(log_file);
         log_file = NULL;
@@ -161,8 +256,22 @@ void logger_print_packet(const PacketInfo *info)
         return;
     }
 
-    make_timestamp(timestamp, sizeof(timestamp));
-    make_packet_summary(info, summary, sizeof(summary));
+    make_timestamp(info->timestamp, timestamp, sizeof(timestamp));
+    make_packet_summary(info, summary, sizeof(summary), 0);
+    printf("[%s] %s\n", timestamp, summary);
+}
+
+void logger_print_packet_verbose(const PacketInfo *info)
+{
+    char timestamp[32];
+    char summary[512];
+
+    if (info == NULL || !info->valid) {
+        return;
+    }
+
+    make_timestamp(info->timestamp, timestamp, sizeof(timestamp));
+    make_packet_summary(info, summary, sizeof(summary), 1);
     printf("[%s] %s\n", timestamp, summary);
 }
 
@@ -171,12 +280,12 @@ void logger_log_packet(const PacketInfo *info)
     char timestamp[32];
     char summary[512];
 
-    if (log_file == NULL || info == NULL || !info->valid) {
+    if (!packet_logging_enabled || log_file == NULL || info == NULL || !info->valid) {
         return;
     }
 
-    make_timestamp(timestamp, sizeof(timestamp));
-    make_packet_summary(info, summary, sizeof(summary));
+    make_timestamp(info->timestamp, timestamp, sizeof(timestamp));
+    make_packet_summary(info, summary, sizeof(summary), 1);
     fprintf(log_file, "[%s] %s\n", timestamp, summary);
 
     /*
@@ -204,11 +313,11 @@ void log_alert(const DetectionResult *result)
 {
     char timestamp[32];
 
-    if (alert_log_file == NULL || result == NULL || !result->alert) {
+    if (!alert_logging_enabled || alert_log_file == NULL || result == NULL || !result->alert) {
         return;
     }
 
-    make_timestamp(timestamp, sizeof(timestamp));
+    make_timestamp(time(NULL), timestamp, sizeof(timestamp));
     fprintf(alert_log_file,
             "[%s] [ALERT] severity=%s type=\"%s\" src=%s dst=%s message=\"%s\"\n",
             timestamp,

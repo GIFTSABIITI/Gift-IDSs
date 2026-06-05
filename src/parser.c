@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #define TCP_HEADER_MIN_LEN 20
 #define UDP_HEADER_LEN 8
@@ -41,6 +42,12 @@ static PacketInfo empty_packet_info(int packet_len)
     PacketInfo info;
 
     memset(&info, 0, sizeof(info));
+    /*
+     * Stateful detection needs a packet time so it can ask questions like
+     * "how many SYN packets did we see during the last 10 seconds?"
+     */
+    info.timestamp = time(NULL);
+
     if (packet_len > UINT16_MAX) {
         info.frame_len = UINT16_MAX;
     } else if (packet_len > 0) {
