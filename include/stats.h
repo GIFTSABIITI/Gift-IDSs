@@ -31,6 +31,7 @@ typedef struct {
 void stats_init(void);
 void stats_update_packet(const PacketInfo *pkt, int raw_packet_len);
 void stats_update_alert(const DetectionResult *result);
+GiftIDSStats stats_get_snapshot(void);
 void stats_print_summary(void);
 void stats_print_live(void);
 

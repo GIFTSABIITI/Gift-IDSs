@@ -3,7 +3,8 @@
 #include "config.h"
 #include "detector.h"
 #include "logger.h"
-#include "parser.h"
+#include "pcap_reader.h"
+#include "processor.h"
 #include "stats.h"
 
 #include <signal.h>
@@ -51,49 +52,11 @@ static void handle_idle(void *user_data)
     maybe_print_live_stats(context);
 }
 
-static void print_packet_for_mode(const PacketInfo *info, const GiftIDSRuntimeOptions *options)
-{
-    if (options->quiet) {
-        return;
-    }
-
-    if (options->verbose) {
-        logger_print_packet_verbose(info);
-    } else {
-        logger_print_packet(info);
-    }
-}
-
 static void handle_packet(const unsigned char *packet, int packet_len, void *user_data)
 {
     AppContext *context = (AppContext *)user_data;
-    DetectionResult detection;
-    PacketInfo info;
 
-    info = parse_packet(packet, packet_len);
-
-    /*
-     * stats_update_packet() receives both the parsed result and the raw frame
-     * length. Calling it once here avoids double-counting while still letting
-     * the stats module track invalid frames and raw bytes seen.
-     */
-    stats_update_packet(info.valid ? &info : NULL, packet_len);
-
-    if (!info.valid) {
-        maybe_print_live_stats(context);
-        return;
-    }
-
-    print_packet_for_mode(&info, context->options);
-    logger_log_packet(&info);
-
-    detection = detect_packet(&info);
-    if (detection.alert) {
-        stats_update_alert(&detection);
-        logger_print_alert(&detection);
-        log_alert(&detection);
-    }
-
+    process_packet_event(packet, packet_len, context->options);
     maybe_print_live_stats(context);
 }
 
@@ -143,17 +106,21 @@ int main(int argc, char **argv)
     context.options = &options;
     context.last_stats_print = time(NULL);
 
-    signal(SIGINT, handle_shutdown);
-    signal(SIGTERM, handle_shutdown);
+    if (options.mode == MODE_PCAP_READ) {
+        result = pcap_reader_run(options.pcap_file, &options);
+    } else {
+        signal(SIGINT, handle_shutdown);
+        signal(SIGTERM, handle_shutdown);
 
-    if (options.interface_name[0] != '\0') {
-        interface = options.interface_name;
-    } else if (!options.quiet) {
-        printf("No interface specified; using the existing raw socket capture behavior.\n");
+        if (options.interface_name[0] != '\0') {
+            interface = options.interface_name;
+        } else if (!options.quiet) {
+            printf("No interface specified; using the existing raw socket capture behavior.\n");
+        }
+
+        capture_set_idle_handler(handle_idle, &context);
+        result = capture_packets(interface, options.max_packets, handle_packet, &context);
     }
-
-    capture_set_idle_handler(handle_idle, &context);
-    result = capture_packets(interface, options.max_packets, handle_packet, &context);
 
     logger_close();
     stats_print_summary();

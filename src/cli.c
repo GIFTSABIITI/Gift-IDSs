@@ -113,6 +113,7 @@ void cli_set_defaults(GiftIDSRuntimeOptions *options)
     }
 
     memset(options, 0, sizeof(*options));
+    options->mode = MODE_LIVE_CAPTURE;
     copy_option_text(options->config_path, sizeof(options->config_path), GIFTIDS_CONFIG_PATH);
 
     options->show_stats = 0;
@@ -147,6 +148,12 @@ int cli_parse_args(int argc, char **argv, GiftIDSRuntimeOptions *options)
                 set_string_option(options->config_path, sizeof(options->config_path), value, "--config") != 0) {
                 return -1;
             }
+        } else if (option_has_inline_value(arg, "--read", &value)) {
+            if (next_value(argc, argv, &i, "--read", &value) != 0 ||
+                set_string_option(options->pcap_file, sizeof(options->pcap_file), value, "--read") != 0) {
+                return -1;
+            }
+            options->mode = MODE_PCAP_READ;
         } else if (option_has_inline_value(arg, "--packet-log", &value)) {
             if (next_value(argc, argv, &i, "--packet-log", &value) != 0 ||
                 set_string_option(options->packet_log_override, sizeof(options->packet_log_override), value, "--packet-log") != 0) {
@@ -167,6 +174,18 @@ int cli_parse_args(int argc, char **argv, GiftIDSRuntimeOptions *options)
             options->verbose = 1;
         } else if (strcmp(arg, "--quiet") == 0) {
             options->quiet = 1;
+        } else if (strcmp(arg, "--disable-suspicious-port") == 0) {
+            options->disable_suspicious_port_rule = 1;
+        } else if (strcmp(arg, "--disable-syn-watch") == 0) {
+            options->disable_tcp_syn_watch_rule = 1;
+        } else if (strcmp(arg, "--disable-icmp-echo") == 0) {
+            options->disable_icmp_echo_rule = 1;
+        } else if (strcmp(arg, "--disable-port-scan") == 0) {
+            options->disable_port_scan_detection = 1;
+        } else if (strcmp(arg, "--disable-syn-flood") == 0) {
+            options->disable_syn_flood_detection = 1;
+        } else if (strcmp(arg, "--disable-icmp-flood") == 0) {
+            options->disable_icmp_flood_detection = 1;
         } else if (strcmp(arg, "--help") == 0 || strcmp(arg, "-h") == 0) {
             options->show_help = 1;
         } else if (strcmp(arg, "--version") == 0) {
@@ -199,6 +218,12 @@ int cli_parse_args(int argc, char **argv, GiftIDSRuntimeOptions *options)
         return -1;
     }
 
+    if (!options->show_help && !options->show_version &&
+        options->mode == MODE_PCAP_READ && options->interface_name[0] != '\0') {
+        fprintf(stderr, "Error: --interface and --read cannot be used together\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -224,6 +249,30 @@ void cli_apply_config_overrides(const GiftIDSRuntimeOptions *options, GiftIDSCon
                          sizeof(config->alert_log_file),
                          options->alert_log_override);
     }
+
+    if (options->disable_suspicious_port_rule) {
+        config->enable_suspicious_port_rule = 0;
+    }
+
+    if (options->disable_tcp_syn_watch_rule) {
+        config->enable_tcp_syn_watch_rule = 0;
+    }
+
+    if (options->disable_icmp_echo_rule) {
+        config->enable_icmp_echo_rule = 0;
+    }
+
+    if (options->disable_port_scan_detection) {
+        config->enable_port_scan_detection = 0;
+    }
+
+    if (options->disable_syn_flood_detection) {
+        config->enable_syn_flood_detection = 0;
+    }
+
+    if (options->disable_icmp_flood_detection) {
+        config->enable_icmp_flood_detection = 0;
+    }
 }
 
 void cli_print_help(const char *program)
@@ -234,23 +283,35 @@ void cli_print_help(const char *program)
     printf("\n");
     printf("Usage:\n");
     printf("  %s --interface <name> [options]\n", name);
+    printf("  %s --read <pcap_file> [options]\n", name);
     printf("\n");
     printf("Options:\n");
     printf("  --interface <name>       Network interface to capture from\n");
+    printf("  --read <pcap_file>       Analyze packets from a saved PCAP file\n");
     printf("  --config <path>          Config file path\n");
     printf("  --packet-log <path>      Override packet log path\n");
     printf("  --alert-log <path>       Override alert log path\n");
     printf("  --stats                  Show live statistics\n");
+    printf("  --count <n>              Stop after n packets\n");
     printf("  --no-packet-log          Disable packet event logging\n");
     printf("  --no-alert-log           Disable alert logging\n");
     printf("  --verbose                Print detailed packet output\n");
     printf("  --quiet                  Print only alerts and important messages\n");
+    printf("  --disable-suspicious-port  Disable the Suspicious Port rule\n");
+    printf("  --disable-syn-watch      Disable the TCP SYN Watch rule\n");
+    printf("  --disable-icmp-echo      Disable the ICMP Echo Request rule\n");
+    printf("  --disable-port-scan      Disable port scan detection\n");
+    printf("  --disable-syn-flood      Disable SYN flood detection\n");
+    printf("  --disable-icmp-flood     Disable ICMP flood detection\n");
     printf("  --help                   Show this help message\n");
     printf("  --version                Show version information\n");
     printf("\n");
     printf("Examples:\n");
     printf("  sudo ./%s --interface wlan0\n", name);
     printf("  sudo ./%s --interface eth0 --stats\n", name);
+    printf("  ./%s --read samples/test.pcap --stats\n", name);
+    printf("  ./%s --read samples/test.pcap --quiet\n", name);
+    printf("  ./%s --read samples/test.pcap --config config/giftids.conf\n", name);
     printf("  sudo ./%s --interface wlan0 --config config/giftids.conf --verbose\n", name);
     printf("  sudo ./%s --interface eth0 --packet-log logs/lab_packets.log --alert-log logs/lab_alerts.log\n", name);
 }

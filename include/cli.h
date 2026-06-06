@@ -3,10 +3,17 @@
 
 #include "config.h"
 
-#define GIFTIDS_VERSION "0.8.0"
+#define GIFTIDS_VERSION "0.11.0"
+
+typedef enum {
+    MODE_LIVE_CAPTURE = 0,
+    MODE_PCAP_READ
+} GiftIDSRunMode;
 
 typedef struct {
+    GiftIDSRunMode mode;
     char interface_name[64];
+    char pcap_file[256];
     char config_path[256];
 
     int show_stats;
@@ -22,6 +29,13 @@ typedef struct {
     long max_packets;
     int show_help;
     int show_version;
+
+    int disable_suspicious_port_rule;
+    int disable_tcp_syn_watch_rule;
+    int disable_icmp_echo_rule;
+    int disable_port_scan_detection;
+    int disable_syn_flood_detection;
+    int disable_icmp_flood_detection;
 } GiftIDSRuntimeOptions;
 
 void cli_set_defaults(GiftIDSRuntimeOptions *options);

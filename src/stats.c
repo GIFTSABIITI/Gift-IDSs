@@ -134,6 +134,11 @@ void stats_update_alert(const DetectionResult *result)
     }
 }
 
+GiftIDSStats stats_get_snapshot(void)
+{
+    return stats;
+}
+
 void stats_print_live(void)
 {
     char runtime[32];

@@ -677,27 +677,33 @@ DetectionResult detect_packet(const PacketInfo *pkt)
      * IDS logic: there is no TCP handshake tracking, no IP fragmentation
      * handling, no persistence, and no blocking.
      */
-    if (check_syn_flood(pkt, &result, now)) {
+    if (detector_config.enable_syn_flood_detection &&
+        check_syn_flood(pkt, &result, now)) {
         return result;
     }
 
-    if (check_port_scan(pkt, &result, now)) {
+    if (detector_config.enable_port_scan_detection &&
+        check_port_scan(pkt, &result, now)) {
         return result;
     }
 
-    if (check_icmp_flood(pkt, &result, now)) {
+    if (detector_config.enable_icmp_flood_detection &&
+        check_icmp_flood(pkt, &result, now)) {
         return result;
     }
 
-    if (check_suspicious_port(pkt, &result, now)) {
+    if (detector_config.enable_suspicious_port_rule &&
+        check_suspicious_port(pkt, &result, now)) {
         return result;
     }
 
-    if (check_icmp_echo_request(pkt, &result, now)) {
+    if (detector_config.enable_icmp_echo_rule &&
+        check_icmp_echo_request(pkt, &result, now)) {
         return result;
     }
 
-    if (check_tcp_syn_watch(pkt, &result, now)) {
+    if (detector_config.enable_tcp_syn_watch_rule &&
+        check_tcp_syn_watch(pkt, &result, now)) {
         return result;
     }
 

@@ -17,6 +17,14 @@ typedef struct {
 
     int alert_cooldown_seconds;
 
+    int enable_suspicious_port_rule;
+    int enable_tcp_syn_watch_rule;
+    int enable_icmp_echo_rule;
+
+    int enable_port_scan_detection;
+    int enable_syn_flood_detection;
+    int enable_icmp_flood_detection;
+
     char packet_log_file[256];
     char alert_log_file[256];
 } GiftIDSConfig;

@@ -33,5 +33,6 @@ typedef struct {
 } PacketInfo;
 
 PacketInfo parse_packet(const unsigned char *packet, int packet_len);
+PacketInfo parse_packet_with_timestamp(const unsigned char *packet, int packet_len, time_t timestamp);
 
 #endif

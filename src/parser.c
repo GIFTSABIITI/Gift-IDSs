@@ -37,7 +37,7 @@ static uint16_t read_u16_network_order(const unsigned char *bytes)
     return ntohs(value);
 }
 
-static PacketInfo empty_packet_info(int packet_len)
+static PacketInfo empty_packet_info(int packet_len, time_t packet_timestamp)
 {
     PacketInfo info;
 
@@ -45,8 +45,10 @@ static PacketInfo empty_packet_info(int packet_len)
     /*
      * Stateful detection needs a packet time so it can ask questions like
      * "how many SYN packets did we see during the last 10 seconds?"
+     * Live capture passes 0 and uses the current time. PCAP mode can pass the
+     * saved packet timestamp, which makes offline analysis repeatable.
      */
-    info.timestamp = time(NULL);
+    info.timestamp = packet_timestamp != 0 ? packet_timestamp : time(NULL);
 
     if (packet_len > UINT16_MAX) {
         info.frame_len = UINT16_MAX;
@@ -134,7 +136,12 @@ static void parse_icmp(const unsigned char *packet, int packet_len, int offset, 
 
 PacketInfo parse_packet(const unsigned char *packet, int packet_len)
 {
-    PacketInfo info = empty_packet_info(packet_len);
+    return parse_packet_with_timestamp(packet, packet_len, 0);
+}
+
+PacketInfo parse_packet_with_timestamp(const unsigned char *packet, int packet_len, time_t timestamp)
+{
+    PacketInfo info = empty_packet_info(packet_len, timestamp);
     const struct ethhdr *eth_header;
     const struct iphdr *ip_header;
     uint16_t ether_type;
