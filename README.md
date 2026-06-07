@@ -9,23 +9,6 @@ stream packet and alert events as JSON lines from the terminal.
 Gift IDS does not implement a GUI, web dashboard, database storage, IPS/blocking,
 AI detection, or advanced threat intelligence yet.
 
-## Portfolio Snapshot
-
-Gift IDS demonstrates low-level C systems programming applied to a practical
-network security problem. It is intentionally learning-focused, but it has the
-shape of a real monitoring tool: packet capture, protocol parsing, detection
-rules, configuration, tests, PCAP replay, reports, and structured JSON output.
-
-Recruiters and reviewers can quickly see:
-
-- C programming with raw sockets, binary parsing, fixed-size buffers, and safe
-  string handling.
-- Network security fundamentals: Ethernet, IPv4, TCP, UDP, ICMP, port-scan
-  behavior, SYN floods, ICMP floods, alert severity, and investigation evidence.
-- Engineering practices: modular headers/source files, CLI design, config
-  loading, repeatable tests, generated reports, and privacy-aware repository
-  hygiene.
-
 ## Project Structure
 
 ```text
