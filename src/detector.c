@@ -1,5 +1,6 @@
 #include "detector.h"
 
+#include <limits.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
@@ -159,6 +160,9 @@ static DetectionResult empty_detection_result(const PacketInfo *pkt)
     if (pkt != NULL) {
         copy_text(result.src_ip, sizeof(result.src_ip), pkt->src_ip);
         copy_text(result.dst_ip, sizeof(result.dst_ip), pkt->dst_ip);
+        copy_text(result.protocol, sizeof(result.protocol), pkt->protocol);
+        result.src_port = pkt->src_port;
+        result.dst_port = pkt->dst_port;
     }
 
     return result;
@@ -170,6 +174,35 @@ static void set_alert(DetectionResult *result, Severity severity, const char *ty
     result->severity = severity;
     copy_text(result->type, sizeof(result->type), type);
     copy_text(result->message, sizeof(result->message), message);
+}
+
+static void set_alert_details(DetectionResult *result,
+                              int threshold,
+                              int observed_count,
+                              int unique_ports,
+                              int window_seconds,
+                              time_t first_seen,
+                              time_t last_seen,
+                              const char *evidence,
+                              const char *recommendation)
+{
+    if (result == NULL) {
+        return;
+    }
+
+    /*
+     * Evidence turns an alert from "the IDS said so" into a small, auditable
+     * explanation. Recommendations keep the learning workflow practical by
+     * giving the analyst a next step instead of only a warning.
+     */
+    result->threshold = threshold;
+    result->observed_count = observed_count;
+    result->unique_ports = unique_ports;
+    result->window_seconds = window_seconds;
+    result->first_seen = first_seen;
+    result->last_seen = last_seen;
+    copy_text(result->evidence, sizeof(result->evidence), evidence);
+    copy_text(result->recommendation, sizeof(result->recommendation), recommendation);
 }
 
 static time_t packet_time(const PacketInfo *pkt)
@@ -386,6 +419,77 @@ static void remember_event(time_t *events, size_t *event_count, time_t now)
     (*event_count)++;
 }
 
+static int size_to_int(size_t value)
+{
+    if (value > (size_t)INT_MAX) {
+        return INT_MAX;
+    }
+
+    return (int)value;
+}
+
+static void event_time_bounds(const time_t *events, size_t event_count, time_t *first_seen, time_t *last_seen)
+{
+    size_t i;
+    time_t first = 0;
+    time_t last = 0;
+
+    for (i = 0; i < event_count; i++) {
+        if (events[i] == 0) {
+            continue;
+        }
+
+        if (first == 0 || events[i] < first) {
+            first = events[i];
+        }
+
+        if (last == 0 || events[i] > last) {
+            last = events[i];
+        }
+    }
+
+    if (first_seen != NULL) {
+        *first_seen = first;
+    }
+
+    if (last_seen != NULL) {
+        *last_seen = last;
+    }
+}
+
+static void port_time_bounds(const PortScanState *state, time_t *first_seen, time_t *last_seen)
+{
+    size_t i;
+    time_t first = 0;
+    time_t last = 0;
+
+    if (state != NULL) {
+        for (i = 0; i < state->port_count; i++) {
+            time_t seen = state->ports[i].last_seen;
+
+            if (seen == 0) {
+                continue;
+            }
+
+            if (first == 0 || seen < first) {
+                first = seen;
+            }
+
+            if (last == 0 || seen > last) {
+                last = seen;
+            }
+        }
+    }
+
+    if (first_seen != NULL) {
+        *first_seen = first;
+    }
+
+    if (last_seen != NULL) {
+        *last_seen = last;
+    }
+}
+
 static int alert_key_matches(const AlertHistory *history,
                              const PacketInfo *pkt,
                              const char *type,
@@ -492,12 +596,31 @@ static int check_syn_flood(const PacketInfo *pkt, DetectionResult *result, time_
 
         if (should_emit_alert(pkt, type, 1, pkt->dst_port, now)) {
             char message[256];
+            char evidence[512];
+            time_t first_seen;
+            time_t last_seen;
 
             snprintf(message, sizeof(message),
-                     "Source sent %zu SYN packets to target port within %d seconds",
+                     "Source sent %zu SYN packets to destination port %u within %d seconds",
                      state->event_count,
+                     pkt->dst_port,
                      detector_config.syn_flood_window_seconds);
             set_alert(result, SEVERITY_HIGH, type, message);
+            event_time_bounds(state->events, state->event_count, &first_seen, &last_seen);
+            snprintf(evidence, sizeof(evidence),
+                     "Source sent %zu SYN packets to destination port %u within %d seconds.",
+                     state->event_count,
+                     pkt->dst_port,
+                     detector_config.syn_flood_window_seconds);
+            set_alert_details(result,
+                              detector_config.syn_flood_threshold,
+                              size_to_int(state->event_count),
+                              0,
+                              detector_config.syn_flood_window_seconds,
+                              first_seen,
+                              last_seen,
+                              evidence,
+                              "Check whether the target service is experiencing abnormal connection attempts.");
         }
 
         return 1;
@@ -530,12 +653,29 @@ static int check_port_scan(const PacketInfo *pkt, DetectionResult *result, time_
 
         if (should_emit_alert(pkt, type, 0, 0, now)) {
             char message[256];
+            char evidence[512];
+            time_t first_seen;
+            time_t last_seen;
 
             snprintf(message, sizeof(message),
                      "Source contacted %zu unique ports on target within %d seconds",
                      state->port_count,
                      detector_config.port_scan_window_seconds);
             set_alert(result, SEVERITY_MEDIUM, type, message);
+            port_time_bounds(state, &first_seen, &last_seen);
+            snprintf(evidence, sizeof(evidence),
+                     "Source contacted %zu unique destination ports on the same target within %d seconds.",
+                     state->port_count,
+                     detector_config.port_scan_window_seconds);
+            set_alert_details(result,
+                              detector_config.port_scan_threshold,
+                              size_to_int(state->port_count),
+                              size_to_int(state->port_count),
+                              detector_config.port_scan_window_seconds,
+                              first_seen,
+                              last_seen,
+                              evidence,
+                              "Investigate the source host and verify whether port scanning or service discovery was authorized.");
         }
 
         return 1;
@@ -567,12 +707,29 @@ static int check_icmp_flood(const PacketInfo *pkt, DetectionResult *result, time
 
         if (should_emit_alert(pkt, type, 0, 0, now)) {
             char message[256];
+            char evidence[512];
+            time_t first_seen;
+            time_t last_seen;
 
             snprintf(message, sizeof(message),
                      "Source sent %zu ICMP echo requests to target within %d seconds",
                      state->event_count,
                      detector_config.icmp_flood_window_seconds);
             set_alert(result, SEVERITY_MEDIUM, type, message);
+            event_time_bounds(state->events, state->event_count, &first_seen, &last_seen);
+            snprintf(evidence, sizeof(evidence),
+                     "Source sent %zu ICMP echo requests to the same target within %d seconds.",
+                     state->event_count,
+                     detector_config.icmp_flood_window_seconds);
+            set_alert_details(result,
+                              detector_config.icmp_flood_threshold,
+                              size_to_int(state->event_count),
+                              0,
+                              detector_config.icmp_flood_window_seconds,
+                              first_seen,
+                              last_seen,
+                              evidence,
+                              "Check whether the ICMP traffic is expected or part of a flood/ping scan.");
         }
 
         return 1;
@@ -601,12 +758,30 @@ static int check_suspicious_port(const PacketInfo *pkt, DetectionResult *result,
 
             if (should_emit_alert(pkt, type, 1, pkt->dst_port, now)) {
                 char message[256];
+                char evidence[512];
+                char recommendation[512];
 
                 snprintf(message, sizeof(message),
                          "Traffic to %s port %u detected",
                          risky_ports[i].service,
                          risky_ports[i].port);
                 set_alert(result, risky_ports[i].severity, type, message);
+                snprintf(evidence, sizeof(evidence),
+                         "Destination port %u is commonly associated with %s traffic.",
+                         risky_ports[i].port,
+                         risky_ports[i].service);
+                snprintf(recommendation, sizeof(recommendation),
+                         "Verify whether %s traffic is expected between these hosts.",
+                         risky_ports[i].service);
+                set_alert_details(result,
+                                  0,
+                                  1,
+                                  0,
+                                  0,
+                                  now,
+                                  now,
+                                  evidence,
+                                  recommendation);
             }
 
             return 1;
@@ -631,6 +806,15 @@ static int check_icmp_echo_request(const PacketInfo *pkt, DetectionResult *resul
                   SEVERITY_LOW,
                   "ICMP Echo Request",
                   "ICMP echo request detected");
+        set_alert_details(result,
+                          0,
+                          1,
+                          0,
+                          0,
+                          now,
+                          now,
+                          "ICMP echo request observed from source to destination.",
+                          "Check whether this is normal connectivity testing or part of scanning activity.");
     }
 
     return 1;
@@ -652,6 +836,15 @@ static int check_tcp_syn_watch(const PacketInfo *pkt, DetectionResult *result, t
                   SEVERITY_LOW,
                   "TCP SYN Watch",
                   "TCP SYN connection attempt detected");
+        set_alert_details(result,
+                          0,
+                          1,
+                          0,
+                          0,
+                          now,
+                          now,
+                          "TCP SYN packet observed without ACK flag, indicating a connection attempt.",
+                          "Monitor for repeated SYN attempts or failed connection patterns.");
     }
 
     return 1;

@@ -151,7 +151,7 @@ int pcap_reader_run(const char *pcap_path, const GiftIDSRuntimeOptions *options)
         return -1;
     }
 
-    if (options == NULL || !options->quiet) {
+    if (options == NULL || (!options->quiet && !options->json_output)) {
         printf("Analyzing PCAP file '%s'.\n", pcap_path);
     }
 
@@ -251,7 +251,7 @@ int pcap_reader_run(const char *pcap_path, const GiftIDSRuntimeOptions *options)
         fprintf(stderr, "Warning: PCAP file '%s' did not contain any packets\n", pcap_path);
     }
 
-    if (status == 0 && (options == NULL || !options->quiet)) {
+    if (status == 0 && (options == NULL || (!options->quiet && !options->json_output))) {
         printf("Analyzed %lu packet%s from '%s'.\n",
                packets_seen,
                packets_seen == 1 ? "" : "s",

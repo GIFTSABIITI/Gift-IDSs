@@ -2,9 +2,11 @@
 #include "cli.h"
 #include "config.h"
 #include "detector.h"
+#include "json_output.h"
 #include "logger.h"
 #include "pcap_reader.h"
 #include "processor.h"
+#include "report.h"
 #include "stats.h"
 
 #include <signal.h>
@@ -40,7 +42,11 @@ static void maybe_print_live_stats(AppContext *context)
     now = time(NULL);
     if (context->last_stats_print == 0 ||
         difftime(now, context->last_stats_print) >= LIVE_STATS_INTERVAL_SECONDS) {
-        stats_print_live();
+        if (context->options->json_output) {
+            json_print_stats_event();
+        } else {
+            stats_print_live();
+        }
         context->last_stats_print = now;
     }
 }
@@ -114,7 +120,7 @@ int main(int argc, char **argv)
 
         if (options.interface_name[0] != '\0') {
             interface = options.interface_name;
-        } else if (!options.quiet) {
+        } else if (!options.quiet && !options.json_output) {
             printf("No interface specified; using the existing raw socket capture behavior.\n");
         }
 
@@ -123,9 +129,25 @@ int main(int argc, char **argv)
     }
 
     logger_close();
-    stats_print_summary();
 
-    if (!options.quiet) {
+    if (options.report_enabled) {
+        if (report_generate(options.report_path, options.report_format, &options, &config) != 0) {
+            result = -1;
+        } else if (!options.quiet && !options.json_output) {
+            printf("Report: %s\n", options.report_path);
+        }
+    }
+
+    if (options.json_output) {
+        if (options.show_stats) {
+            json_print_stats_event();
+        }
+        json_print_session_complete();
+    } else {
+        stats_print_summary();
+    }
+
+    if (!options.quiet && !options.json_output) {
         if (options.packet_logging_enabled) {
             printf("Packet log: %s\n", config.packet_log_file);
         } else {

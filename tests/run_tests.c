@@ -7,6 +7,8 @@ void run_detector_tests(TestStats *stats);
 void run_parser_tests(TestStats *stats);
 void run_cli_tests(TestStats *stats);
 void run_stats_tests(TestStats *stats);
+void run_report_tests(TestStats *stats);
+void run_json_output_tests(TestStats *stats);
 
 int main(void)
 {
@@ -24,6 +26,8 @@ int main(void)
     run_parser_tests(&stats);
     run_cli_tests(&stats);
     run_stats_tests(&stats);
+    run_report_tests(&stats);
+    run_json_output_tests(&stats);
 
     printf("Tests run: %d\n", stats.tests_run);
     printf("Passed: %d\n", stats.passed);

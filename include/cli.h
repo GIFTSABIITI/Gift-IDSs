@@ -3,7 +3,7 @@
 
 #include "config.h"
 
-#define GIFTIDS_VERSION "0.11.0"
+#define GIFTIDS_VERSION "0.14.0"
 
 typedef enum {
     MODE_LIVE_CAPTURE = 0,
@@ -25,6 +25,12 @@ typedef struct {
 
     char packet_log_override[256];
     char alert_log_override[256];
+
+    char report_path[256];
+    char report_format[16];
+    int report_enabled;
+
+    int json_output;
 
     long max_packets;
     int show_help;

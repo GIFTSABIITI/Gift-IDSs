@@ -63,12 +63,13 @@ static int test_cli_log_overrides(void)
 static int test_cli_output_flags(void)
 {
     GiftIDSRuntimeOptions options;
-    char *argv[] = {"giftids", "--stats", "--verbose"};
+    char *argv[] = {"giftids", "--stats", "--verbose", "--json"};
 
     TEST_BEGIN("CLI output flags");
-    ASSERT_EQ_INT(0, parse_args(3, argv, &options), "stats and verbose should parse");
+    ASSERT_EQ_INT(0, parse_args(4, argv, &options), "stats, verbose, and JSON should parse");
     ASSERT_EQ_INT(1, options.show_stats, "--stats should enable stats");
     ASSERT_EQ_INT(1, options.verbose, "--verbose should enable verbose output");
+    ASSERT_EQ_INT(1, options.json_output, "--json should enable JSON output");
     ASSERT_EQ_INT(0, options.quiet, "quiet should remain disabled");
     TEST_PASS();
 }
@@ -152,6 +153,64 @@ static int test_cli_rule_disable_options(void)
     TEST_PASS();
 }
 
+static int test_cli_report_options(void)
+{
+    GiftIDSRuntimeOptions options;
+    char *argv[] = {
+        "giftids",
+        "--report",
+        "reports/session_report.json",
+        "--report-format",
+        "json"
+    };
+
+    TEST_BEGIN("CLI report options");
+    ASSERT_EQ_INT(0, parse_args(5, argv, &options), "report options should parse");
+    ASSERT_EQ_INT(1, options.report_enabled, "--report should enable report generation");
+    ASSERT_STR_EQ("reports/session_report.json", options.report_path, "report path did not parse");
+    ASSERT_STR_EQ("json", options.report_format, "report format did not parse");
+    TEST_PASS();
+}
+
+static int test_cli_report_inline_options(void)
+{
+    GiftIDSRuntimeOptions options;
+    char *argv[] = {
+        "giftids",
+        "--report=reports/session_report.txt",
+        "--report-format=txt"
+    };
+
+    TEST_BEGIN("CLI inline report options");
+    ASSERT_EQ_INT(0, parse_args(3, argv, &options), "inline report options should parse");
+    ASSERT_EQ_INT(1, options.report_enabled, "inline --report should enable report generation");
+    ASSERT_STR_EQ("reports/session_report.txt", options.report_path, "inline report path did not parse");
+    ASSERT_STR_EQ("txt", options.report_format, "inline report format did not parse");
+    TEST_PASS();
+}
+
+static int test_cli_invalid_report_format(void)
+{
+    GiftIDSRuntimeOptions options;
+    char *argv[] = {"giftids", "--report-format", "xml"};
+
+    TEST_BEGIN("CLI invalid report format");
+    ASSERT_TRUE(parse_args(3, argv, &options) != 0, "invalid report format should fail");
+    TEST_PASS();
+}
+
+static int test_cli_missing_report_values(void)
+{
+    GiftIDSRuntimeOptions options;
+    char *argv_report[] = {"giftids", "--report"};
+    char *argv_format[] = {"giftids", "--report-format"};
+
+    TEST_BEGIN("CLI missing report values");
+    ASSERT_TRUE(parse_args(2, argv_report, &options) != 0, "missing report path should fail");
+    ASSERT_TRUE(parse_args(2, argv_format, &options) != 0, "missing report format should fail");
+    TEST_PASS();
+}
+
 void run_cli_tests(TestStats *stats)
 {
     RUN_TEST(stats, test_cli_interface_option);
@@ -165,4 +224,8 @@ void run_cli_tests(TestStats *stats)
     RUN_TEST(stats, test_cli_missing_interface_value);
     RUN_TEST(stats, test_cli_interface_and_read_conflict);
     RUN_TEST(stats, test_cli_rule_disable_options);
+    RUN_TEST(stats, test_cli_report_options);
+    RUN_TEST(stats, test_cli_report_inline_options);
+    RUN_TEST(stats, test_cli_invalid_report_format);
+    RUN_TEST(stats, test_cli_missing_report_values);
 }

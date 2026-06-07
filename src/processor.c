@@ -1,12 +1,20 @@
 #include "processor.h"
 
 #include "detector.h"
+#include "json_output.h"
 #include "logger.h"
 #include "parser.h"
 #include "stats.h"
 
 static void print_packet_for_mode(const PacketInfo *info, const GiftIDSRuntimeOptions *options)
 {
+    if (options != NULL && options->json_output) {
+        if (!options->quiet) {
+            json_print_packet(info, options->verbose);
+        }
+        return;
+    }
+
     if (options != NULL && options->quiet) {
         return;
     }
@@ -51,7 +59,13 @@ void process_packet_event_at_time(const unsigned char *packet,
     detection = detect_packet(&info);
     if (detection.alert) {
         stats_update_alert(&detection);
-        logger_print_alert(&detection);
+        if (options != NULL && options->json_output) {
+            json_print_alert(&detection);
+        } else if (options != NULL && options->verbose) {
+            logger_print_alert_verbose(&detection);
+        } else {
+            logger_print_alert(&detection);
+        }
         log_alert(&detection);
     }
 }

@@ -297,34 +297,93 @@ void logger_log_packet(const PacketInfo *info)
 
 void logger_print_alert(const DetectionResult *result)
 {
+    const char *evidence;
+
     if (result == NULL || !result->alert) {
         return;
     }
 
-    printf("[ALERT] %s %s %s -> %s %s\n",
+    evidence = result->evidence[0] != '\0' ? result->evidence : result->message;
+    printf("[ALERT] %s %s %s -> %s evidence=\"%s\"\n",
            severity_to_string(result->severity),
            result->type,
            result->src_ip,
            result->dst_ip,
-           result->message);
+           evidence);
+}
+
+void logger_print_alert_verbose(const DetectionResult *result)
+{
+    if (result == NULL || !result->alert) {
+        return;
+    }
+
+    printf("[ALERT]\n");
+    printf("Severity: %s\n", severity_to_string(result->severity));
+    printf("Type: %s\n", result->type);
+    printf("Source: %s\n", result->src_ip);
+    printf("Destination: %s\n", result->dst_ip);
+    printf("Protocol: %s\n", result->protocol);
+
+    if (result->src_port > 0) {
+        printf("Source Port: %u\n", result->src_port);
+    }
+
+    if (result->dst_port > 0) {
+        printf("Destination Port: %u\n", result->dst_port);
+    }
+
+    if (result->observed_count > 0) {
+        printf("Observed Count: %d\n", result->observed_count);
+    }
+
+    if (result->unique_ports > 0) {
+        printf("Unique Ports: %d\n", result->unique_ports);
+    }
+
+    if (result->threshold > 0) {
+        printf("Threshold: %d\n", result->threshold);
+    }
+
+    if (result->window_seconds > 0) {
+        printf("Window: %d seconds\n", result->window_seconds);
+    }
+
+    printf("Evidence: %s\n", result->evidence[0] != '\0' ? result->evidence : result->message);
+
+    if (result->recommendation[0] != '\0') {
+        printf("Recommendation: %s\n", result->recommendation);
+    }
 }
 
 void log_alert(const DetectionResult *result)
 {
     char timestamp[32];
+    const char *evidence;
+    const char *recommendation;
 
     if (!alert_logging_enabled || alert_log_file == NULL || result == NULL || !result->alert) {
         return;
     }
 
     make_timestamp(time(NULL), timestamp, sizeof(timestamp));
+    evidence = result->evidence[0] != '\0' ? result->evidence : result->message;
+    recommendation = result->recommendation[0] != '\0' ? result->recommendation : "";
     fprintf(alert_log_file,
-            "[%s] [ALERT] severity=%s type=\"%s\" src=%s dst=%s message=\"%s\"\n",
+            "[%s] [ALERT] severity=%s type=\"%s\" src=%s dst=%s protocol=%s src_port=%u dst_port=%u observed_count=%d unique_ports=%d threshold=%d window=%d evidence=\"%s\" recommendation=\"%s\"\n",
             timestamp,
             severity_to_string(result->severity),
             result->type,
             result->src_ip,
             result->dst_ip,
-            result->message);
+            result->protocol,
+            result->src_port,
+            result->dst_port,
+            result->observed_count,
+            result->unique_ports,
+            result->threshold,
+            result->window_seconds,
+            evidence,
+            recommendation);
     fflush(alert_log_file);
 }

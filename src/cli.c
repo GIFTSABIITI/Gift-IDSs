@@ -106,6 +106,11 @@ static int set_string_option(char *field,
     return 0;
 }
 
+static int is_supported_report_format(const char *format)
+{
+    return strcmp(format, "txt") == 0 || strcmp(format, "json") == 0;
+}
+
 void cli_set_defaults(GiftIDSRuntimeOptions *options)
 {
     if (options == NULL) {
@@ -121,6 +126,9 @@ void cli_set_defaults(GiftIDSRuntimeOptions *options)
     options->quiet = 0;
     options->packet_logging_enabled = 1;
     options->alert_logging_enabled = 1;
+    copy_option_text(options->report_format, sizeof(options->report_format), "txt");
+    options->report_enabled = 0;
+    options->json_output = 0;
     options->max_packets = 0;
 }
 
@@ -164,8 +172,26 @@ int cli_parse_args(int argc, char **argv, GiftIDSRuntimeOptions *options)
                 set_string_option(options->alert_log_override, sizeof(options->alert_log_override), value, "--alert-log") != 0) {
                 return -1;
             }
+        } else if (option_has_inline_value(arg, "--report", &value)) {
+            if (next_value(argc, argv, &i, "--report", &value) != 0 ||
+                set_string_option(options->report_path, sizeof(options->report_path), value, "--report") != 0) {
+                return -1;
+            }
+            options->report_enabled = 1;
+        } else if (option_has_inline_value(arg, "--report-format", &value)) {
+            if (next_value(argc, argv, &i, "--report-format", &value) != 0 ||
+                set_string_option(options->report_format, sizeof(options->report_format), value, "--report-format") != 0) {
+                return -1;
+            }
+            if (!is_supported_report_format(options->report_format)) {
+                fprintf(stderr, "Error: unsupported report format '%s' (supported: txt, json)\n",
+                        options->report_format);
+                return -1;
+            }
         } else if (strcmp(arg, "--stats") == 0) {
             options->show_stats = 1;
+        } else if (strcmp(arg, "--json") == 0) {
+            options->json_output = 1;
         } else if (strcmp(arg, "--no-packet-log") == 0) {
             options->packet_logging_enabled = 0;
         } else if (strcmp(arg, "--no-alert-log") == 0) {
@@ -221,6 +247,13 @@ int cli_parse_args(int argc, char **argv, GiftIDSRuntimeOptions *options)
     if (!options->show_help && !options->show_version &&
         options->mode == MODE_PCAP_READ && options->interface_name[0] != '\0') {
         fprintf(stderr, "Error: --interface and --read cannot be used together\n");
+        return -1;
+    }
+
+    if (!options->show_help && !options->show_version &&
+        !is_supported_report_format(options->report_format)) {
+        fprintf(stderr, "Error: unsupported report format '%s' (supported: txt, json)\n",
+                options->report_format);
         return -1;
     }
 
@@ -291,7 +324,10 @@ void cli_print_help(const char *program)
     printf("  --config <path>          Config file path\n");
     printf("  --packet-log <path>      Override packet log path\n");
     printf("  --alert-log <path>       Override alert log path\n");
+    printf("  --report <path>          Generate a final session report\n");
+    printf("  --report-format <format> Report format: txt or json\n");
     printf("  --stats                  Show live statistics\n");
+    printf("  --json                   Print packet, alert, stats, and completion events as JSON lines\n");
     printf("  --count <n>              Stop after n packets\n");
     printf("  --no-packet-log          Disable packet event logging\n");
     printf("  --no-alert-log           Disable alert logging\n");
@@ -311,6 +347,9 @@ void cli_print_help(const char *program)
     printf("  sudo ./%s --interface eth0 --stats\n", name);
     printf("  ./%s --read samples/test.pcap --stats\n", name);
     printf("  ./%s --read samples/test.pcap --quiet\n", name);
+    printf("  ./%s --read samples/test.pcap --report reports/pcap_report.txt\n", name);
+    printf("  ./%s --read samples/test.pcap --report reports/pcap_report.json --report-format json\n", name);
+    printf("  ./%s --read samples/test.pcap --json --quiet\n", name);
     printf("  ./%s --read samples/test.pcap --config config/giftids.conf\n", name);
     printf("  sudo ./%s --interface wlan0 --config config/giftids.conf --verbose\n", name);
     printf("  sudo ./%s --interface eth0 --packet-log logs/lab_packets.log --alert-log logs/lab_alerts.log\n", name);

@@ -124,6 +124,8 @@ static int test_suspicious_port_rule(void)
 
     ASSERT_EQ_INT(1, result.alert, "traffic to port 445 should alert");
     ASSERT_STR_EQ("Suspicious Port", result.type, "wrong alert type for suspicious port");
+    ASSERT_TRUE(result.evidence[0] != '\0', "suspicious port alert should include evidence");
+    ASSERT_TRUE(result.recommendation[0] != '\0', "suspicious port alert should include a recommendation");
     TEST_PASS();
 }
 
@@ -145,6 +147,12 @@ static int test_port_scan_detection(void)
 
     ASSERT_EQ_INT(1, result.alert, "three unique SYN destination ports should alert");
     ASSERT_STR_EQ("Possible Port Scan", result.type, "wrong alert type for port scan");
+    ASSERT_EQ_INT(3, result.observed_count, "port scan should record observed unique port count");
+    ASSERT_EQ_INT(3, result.unique_ports, "port scan should record unique ports");
+    ASSERT_EQ_INT(10, result.window_seconds, "port scan should record window seconds");
+    ASSERT_EQ_INT(3, result.threshold, "port scan should record threshold");
+    ASSERT_TRUE(result.first_seen != 0, "port scan should record first seen time");
+    ASSERT_TRUE(result.last_seen != 0, "port scan should record last seen time");
     TEST_PASS();
 }
 
@@ -164,6 +172,9 @@ static int test_syn_flood_detection(void)
 
     ASSERT_EQ_INT(1, result.alert, "three SYN packets to one port should alert");
     ASSERT_STR_EQ("Possible SYN Flood", result.type, "wrong alert type for SYN flood");
+    ASSERT_EQ_INT(3, result.observed_count, "SYN flood should record observed count");
+    ASSERT_EQ_INT(3, result.threshold, "SYN flood should record threshold");
+    ASSERT_EQ_INT(9000, result.dst_port, "SYN flood should record destination port");
     TEST_PASS();
 }
 
@@ -182,6 +193,8 @@ static int test_icmp_flood_detection(void)
 
     ASSERT_EQ_INT(1, result.alert, "three ICMP echo requests should alert");
     ASSERT_STR_EQ("Possible ICMP Flood", result.type, "wrong alert type for ICMP flood");
+    ASSERT_EQ_INT(3, result.observed_count, "ICMP flood should record observed count");
+    ASSERT_EQ_INT(3, result.threshold, "ICMP flood should record threshold");
     TEST_PASS();
 }
 

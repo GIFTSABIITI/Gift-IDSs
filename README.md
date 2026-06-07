@@ -3,10 +3,28 @@
 Gift IDS is a learning-focused intrusion detection and network security
 monitoring tool written in C. It captures live Ethernet frames, parses IPv4
 TCP/UDP/ICMP packets, logs packet events, raises beginner-friendly alerts, reads
-saved PCAP files, and prints runtime statistics from the terminal.
+saved PCAP files, prints runtime statistics, generates session reports, and can
+stream packet and alert events as JSON lines from the terminal.
 
 Gift IDS does not implement a GUI, web dashboard, database storage, IPS/blocking,
 AI detection, or advanced threat intelligence yet.
+
+## Portfolio Snapshot
+
+Gift IDS demonstrates low-level C systems programming applied to a practical
+network security problem. It is intentionally learning-focused, but it has the
+shape of a real monitoring tool: packet capture, protocol parsing, detection
+rules, configuration, tests, PCAP replay, reports, and structured JSON output.
+
+Recruiters and reviewers can quickly see:
+
+- C programming with raw sockets, binary parsing, fixed-size buffers, and safe
+  string handling.
+- Network security fundamentals: Ethernet, IPv4, TCP, UDP, ICMP, port-scan
+  behavior, SYN floods, ICMP floods, alert severity, and investigation evidence.
+- Engineering practices: modular headers/source files, CLI design, config
+  loading, repeatable tests, generated reports, and privacy-aware repository
+  hygiene.
 
 ## Project Structure
 
@@ -22,6 +40,8 @@ src/
   stats.c
   processor.c
   pcap_reader.c
+  report.c
+  json_output.c
 
 include/
   capture.h
@@ -33,13 +53,17 @@ include/
   stats.h
   processor.h
   pcap_reader.h
+  report.h
+  json_output.h
 
 config/
   giftids.conf
 
 logs/
-  giftids.log
-  giftids_alerts.log
+  README.md
+
+reports/
+  README.md
 
 samples/
   README.md
@@ -52,6 +76,8 @@ tests/
   test_parser.c
   test_cli.c
   test_stats.c
+  test_report.c
+  test_json_output.c
 ```
 
 ## Current Phases
@@ -67,6 +93,9 @@ tests/
 - Phase 9: testing and validation with a small C test harness
 - Phase 10: offline PCAP file analysis mode
 - Phase 11: detection rule enable/disable configuration
+- Phase 12: better alert evidence and investigation recommendations
+- Phase 13: final session report generation in text or JSON
+- Phase 14: terminal JSON output mode for packet, alert, stats, and completion events
 
 ## Build
 
@@ -86,6 +115,8 @@ sudo ./giftids --interface wlan0 --stats
 sudo ./giftids --interface eth0 --verbose
 sudo ./giftids --interface eth0 --packet-log logs/lab_packets.log --alert-log logs/lab_alerts.log
 sudo ./giftids --interface eth0 --no-packet-log --no-alert-log --quiet --stats
+sudo ./giftids --interface wlan0 --stats --report reports/live_report.txt
+sudo ./giftids --interface wlan0 --json
 ```
 
 If no interface is supplied, Gift IDS keeps the existing raw socket behavior and
@@ -101,6 +132,9 @@ be analyzed again after parser, detector, or config changes.
 ./giftids --read samples/test.pcap --quiet
 ./giftids --read samples/test.pcap --verbose
 ./giftids --read samples/test.pcap --config config/giftids.conf
+./giftids --read samples/test.pcap --report reports/pcap_report.txt
+./giftids --read samples/test.pcap --report reports/pcap_report.json --report-format json
+./giftids --read samples/test.pcap --json --quiet
 ```
 
 `--interface` and `--read` are mutually exclusive. Live and offline packets use
@@ -112,8 +146,93 @@ Example PCAP output:
 ```text
 Analyzing PCAP file 'samples/test.pcap'.
 [2026-06-06 10:15:22] IPv4 192.168.1.10 -> 192.168.1.20 proto=TCP sport=51514 dport=445
-[ALERT] MEDIUM Suspicious Port 192.168.1.10 -> 192.168.1.20 Traffic to SMB port 445 detected
+[ALERT] MEDIUM Suspicious Port 192.168.1.10 -> 192.168.1.20 evidence="Destination port 445 is commonly associated with SMB traffic."
 Analyzed 1 packet from 'samples/test.pcap'.
+```
+
+## Reports
+
+Use `--report <path>` to generate a final session report after live capture
+stops or after PCAP analysis finishes. Reports are useful after a monitoring
+session because they preserve the runtime summary, alert counts, rule settings,
+log paths, and recommended next steps in one file.
+
+```sh
+sudo ./giftids --interface wlan0 --stats --report reports/session_report.txt
+./giftids --read samples/test.pcap --report reports/pcap_report.txt
+./giftids --read samples/test.pcap --report reports/pcap_report.json --report-format json
+```
+
+Supported report formats are `txt` and `json`. The default is `txt`.
+
+Text report example:
+
+```text
+Gift IDS Session Report
+=======================
+
+Generated At:
+- 2026-06-07 15:55:00
+
+Runtime Summary:
+- Packets captured: 5000
+- Total alerts: 12
+
+Recommendations:
+- Review high severity alerts first.
+- Use PCAP mode for repeatable testing.
+```
+
+JSON report example:
+
+```json
+{
+  "project": "Gift IDS",
+  "report_type": "session_report",
+  "run_mode": "pcap_read",
+  "runtime_summary": {
+    "total_packets": 5000
+  },
+  "alert_summary": {
+    "total_alerts": 12
+  }
+}
+```
+
+## JSON Output
+
+Use `--json` to print terminal events as JSON lines. JSON lines are better for
+streaming output because each line is one complete object, which makes the
+stream easier for automation, shell tools, and SIEM-style collectors to parse.
+Log files remain normal text in this phase.
+
+```sh
+sudo ./giftids --interface wlan0 --json
+./giftids --read samples/test.pcap --json
+./giftids --read samples/test.pcap --json --quiet
+./giftids --read samples/test.pcap --json --verbose
+```
+
+With `--json --quiet`, packet events are suppressed but alert and completion
+events still print. With `--json --stats`, stats are printed as JSON events so
+human stats text does not break the JSON-line stream.
+
+JSON packet example:
+
+```json
+{"event_type":"packet","timestamp":"2026-06-07 16:05:00","src_ip":"192.168.1.5","dst_ip":"8.8.8.8","protocol":"UDP","src_port":55320,"dst_port":53,"ttl":64,"ip_len":60,"frame_len":74}
+```
+
+JSON alert example:
+
+```json
+{"event_type":"alert","timestamp":"2026-06-07 16:05:04","severity":"MEDIUM","type":"Possible Port Scan","src_ip":"192.168.1.20","dst_ip":"192.168.1.10","protocol":"TCP","src_port":51544,"dst_port":80,"observed_count":12,"unique_ports":12,"threshold":10,"window_seconds":10,"evidence":"Source contacted 12 unique destination ports on the same target within 10 seconds.","recommendation":"Investigate the source host and verify whether port scanning or service discovery was authorized."}
+```
+
+JSON completion example:
+
+```json
+{"event_type":"session_complete","timestamp":"2026-06-07 16:10:30","runtime_seconds":42,"total_packets":5000,"total_alerts":12}
 ```
 
 ## Tests
@@ -138,8 +257,8 @@ Running tests...
 [PASS] config defaults
 [PASS] TCP SYN Watch rule
 [PASS] parser Ethernet IPv4 TCP
-Tests run: 41
-Passed: 41
+Tests run: 53
+Passed: 53
 Failed: 0
 ```
 
@@ -158,6 +277,28 @@ Stateful rules keep short-lived memory about recent packets. Time windows matter
 because ten packets in one day and ten packets in ten seconds mean very
 different things. Cooldowns reduce repeated alerts for the same source, target,
 rule type, and destination port.
+
+Alerts include evidence and a recommendation. Evidence records why the rule
+fired, such as a destination port, observed count, threshold, unique port count,
+or time window. Recommendations help with investigation by suggesting what to
+verify next instead of leaving the analyst with only an alert name.
+
+Verbose alert example:
+
+```text
+[ALERT]
+Severity: MEDIUM
+Type: Possible Port Scan
+Source: 192.168.1.20
+Destination: 192.168.1.10
+Protocol: TCP
+Observed Count: 12
+Unique Ports: 12
+Threshold: 10
+Window: 10 seconds
+Evidence: Source contacted 12 unique destination ports on the same target within 10 seconds.
+Recommendation: Investigate the source host and verify whether port scanning or service discovery was authorized.
+```
 
 ## Rule Configuration
 
@@ -226,7 +367,10 @@ Options:
   --config <path>          Config file path
   --packet-log <path>      Override packet log path
   --alert-log <path>       Override alert log path
+  --report <path>          Generate a final session report
+  --report-format <format> Report format: txt or json
   --stats                  Show live statistics
+  --json                   Print packet, alert, stats, and completion events as JSON lines
   --count <n>              Stop after n packets
   --no-packet-log          Disable packet event logging
   --no-alert-log           Disable alert logging
@@ -244,7 +388,8 @@ Options:
 
 Packet events are saved to `logs/giftids.log` by default. Alerts are saved to
 `logs/giftids_alerts.log` by default. Both paths can be changed in config or
-overridden on the CLI.
+overridden on the CLI. Alert log entries include severity, type, source,
+destination, protocol, counters, evidence, and recommendation fields.
 
 `--stats` prints live statistics during live capture, and Gift IDS prints a
 final summary when capture or PCAP analysis finishes:
@@ -267,8 +412,15 @@ High alerts: 0
 ========================================================
 ```
 
-## Safe Testing
+When `--json --stats` is enabled, live and final stats are emitted as JSON
+events instead of human text so the output remains parseable as JSON lines.
 
-Test only on systems and local lab networks you own or have explicit permission
-to monitor. Only use PCAP files from your own lab or trusted sources; packet
-captures can contain private traffic.
+## Safety And Privacy
+
+Gift IDS may capture sensitive network metadata such as IP addresses, ports, and
+traffic patterns. Only run it on networks you own or have permission to monitor.
+Do not publish logs or reports from private networks without removing sensitive
+information.
+
+Only use PCAP files from your own lab or trusted sources; packet captures can
+contain private traffic.

@@ -18,6 +18,7 @@ void logger_print_packet(const PacketInfo *info);
 void logger_print_packet_verbose(const PacketInfo *info);
 void logger_log_packet(const PacketInfo *info);
 void logger_print_alert(const DetectionResult *result);
+void logger_print_alert_verbose(const DetectionResult *result);
 void log_alert(const DetectionResult *result);
 
 #endif
